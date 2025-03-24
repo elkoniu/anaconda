@@ -56,6 +56,12 @@ class PayloadFactory:
             from pyanaconda.modules.payloads.payload.flatpak.flatpak import FlatpakModule
             return FlatpakModule()
 
+        if payload_type == PayloadType.BOOTC:
+            from pyanaconda.modules.payloads.payload.rpm_ostree.rpm_ostree import (
+                RPMOSTreeModule,
+            )
+            return RPMOSTreeModule()
+
         raise ValueError("Unknown payload type: {}".format(payload_type))
 
     @classmethod
@@ -67,6 +73,9 @@ class PayloadFactory:
         """
         if data.ostreesetup.seen or data.ostreecontainer.seen:
             return PayloadType.RPM_OSTREE
+
+        if data.bootc.seen:
+            return PayloadType.BOOTC
 
         if data.liveimg.seen:
             return PayloadType.LIVE_IMAGE
