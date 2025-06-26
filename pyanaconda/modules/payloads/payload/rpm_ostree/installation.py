@@ -71,6 +71,10 @@ def _get_ref(data):
     :param data: OSTree source structure
     :return str: ref or name based on source
     """
+    if isinstance(data, BootcConfigurationData):
+        # Bootc uses sourceImgRef instead of url
+        return data.sourceImgRef
+
     # Variable substitute the ref: https://pagure.io/atomic-wg/issue/299
     if data.is_container():
         # we don't have ref with container; there are not multiple references in one container
@@ -643,13 +647,16 @@ class DeployOSTreeTask(Task):
 
     @property
     def name(self):
-        return "Deploy bootc" if isinstance(self._data, BootcConfigurationData) else "Deploy OSTree"
+        if isinstance(self._data, BootcConfigurationData):
+            return "Deploy bootc"
+        return"Deploy OSTree"
 
     def run(self):
         stateroot = _get_stateroot(self._data)
         ref = _get_ref(self._data)
 
         if isinstance(self._data, BootcConfigurationData):
+            log.debug("XXX RUN started for bootc")
             self.report_progress(_("Bootc deployment starting: {}").format(ref))
 
             safe_exec_program(
@@ -665,6 +672,7 @@ class DeployOSTreeTask(Task):
             self.report_progress(_("Bootc deployment complete: {}").format(ref))
             return
 
+        log.debug("XXX RUN started for ostree")
         self.report_progress(_("Deployment starting: {}").format(ref))
 
         if arch.is_s390():
