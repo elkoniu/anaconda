@@ -35,6 +35,7 @@ from pyanaconda.modules.common.errors.installation import (
     BootloaderInstallationError,
     PayloadInstallationError,
 )
+from pyanaconda.modules.common.structures.bootc import BootcConfigurationData
 from pyanaconda.modules.common.structures.storage import DeviceData
 from pyanaconda.modules.common.task import Task
 from pyanaconda.modules.payloads.payload.rpm_ostree.util import have_bootupd
@@ -70,6 +71,10 @@ def _get_ref(data):
     :param data: OSTree source structure
     :return str: ref or name based on source
     """
+    if isinstance(data, BootcConfigurationData):
+        # Bootc uses sourceImgRef instead of url
+        return data.sourceImgRef
+
     # Variable substitute the ref: https://pagure.io/atomic-wg/issue/299
     if data.is_container():
         # we don't have ref with container; there are not multiple references in one container
@@ -86,6 +91,10 @@ def _get_stateroot(data):
     :param data: OSTree source structure
     :return str: stateroot or osname value based on source
     """
+    if isinstance(data, BootcConfigurationData):
+        # Bootc uses stateroot instead of osname
+        return data.stateroot
+
     if data.is_container():
         # osname was renamed to stateroot so let's use the new name
         if data.stateroot:
@@ -631,6 +640,162 @@ class ConfigureBootloader(Task):
                  f"\"{cmdline}\"",
                  "-t",
                  self._sysroot + "/boot"])
+
+
+class DeployBootcTask(Task):
+    """Task to deploy Bootc based image."""
+
+    def __init__(self, data, physroot, sysroot):
+        """Create a new task.
+
+        :param data: a bootc configuration
+        :param str physroot: a path to the physical root
+        :param str sysroot: a path to the system root
+        """
+        super().__init__()
+        self._data = data
+        self._physroot = physroot
+        self._sysroot = sysroot
+
+    @property
+    def name(self):
+        return "Deploy bootc"
+
+    def _get_deployment_path(self, root_path):
+        """Get the deployment path using OSTree API.
+
+        :param str root_path: path to the root where ostree repo lives
+        :returns: path to the deployment directory with /root inserted
+        """
+        sysroot_file = Gio.File.new_for_path(root_path)
+        sysroot_obj = OSTree.Sysroot.new(sysroot_file)
+        sysroot_obj.load(None)
+
+        deployments = sysroot_obj.get_deployments()
+        assert len(deployments) > 0
+
+        deployment = deployments[0]
+        deployment_path = sysroot_obj.get_deployment_directory(deployment)
+        deploy_path = deployment_path.get_path()
+        # The deployment path is like /mnt/sysroot/ostree/deploy/...
+        # We need to insert /root to get /mnt/sysroot/root/ostree/deploy/...
+        deploy_path = deploy_path.replace(root_path + "/ostree", root_path + "/root/ostree", 1)
+        return deploy_path
+
+    def run(self):
+        stateroot = _get_stateroot(self._data)
+        ref = _get_ref(self._data)
+
+        log.debug("Run the bootc based installation")
+
+        self.report_progress(_("Bootc deployment starting: {}").format(ref))
+
+        # Some workarounds are needed due to current bootc development status
+
+        # The main one is SELinux to be presented in the system.
+        # https://github.com/bootc-dev/bootc/issues/1438
+        # It may be disabled but need to be presented.
+        # Both pairs of kernel parameters will work:
+        # * selinux=0 enforcing=0
+        # * selinux=1 enforcing=0
+        # Right now we use the /etc/selinux/config file to do the equivalent of
+        # selinux=1 enforcing=0.
+        # We set this in lorax-build using the whitelist_selinux.patch
+
+        # Bootc expects `prepare-root.conf` file to be presented in the system
+        # https://github.com/bootc-dev/bootc/discussions/1400
+        # https://github.com/bootc-dev/bootc/issues/1410
+        # echo -e "[ostree] \nsysroot=/sysroot" > /etc/ostree/prepare-root.conf
+        log.debug("Bootc workaround: add missing configuration file")
+        if not os.path.exists("/etc/ostree/prepare-root.conf"):
+            with open("/etc/ostree/prepare-root.conf", "w") as f:
+                f.write("[ostree]\n")
+                f.write("sysroot=/sysroot\n")
+        else:
+            log.debug("/etc/ostree/prepare-root.conf already presented and will not be modified")
+
+        # After automatic partitioning sysroot and sysimage are mounted,
+        # but we need a clear directory structure expected by the bootc
+        log.debug("Bootc workaround: remove unwanted mounts")
+        # umount -l /mnt/sysimage/
+        safe_exec_program("umount", ["-l", self._physroot])
+
+        # Bootc does not need any directories created automatically
+        # during the partitioning by blivet
+        log.debug("Bootc workaround: remove unwanted directories")
+        # Remove directories that blivet created but bootc doesn't need
+        directories_to_remove = ("root", "dev", "proc", "run", "sys", "tmp", "home")
+        for directory in (f"{self._sysroot}/{d}" for d in directories_to_remove):
+            safe_exec_program("rm", ["-rf", directory])
+
+        # Bootc requires empty `boot` directory to be present
+        log.debug("Bootc workaround: create bootc required dirs")
+        # Mount /boot partition created by autopart
+        # Get the boot device
+        device_tree = STORAGE.get_proxy(DEVICE_TREE)
+        boot_device_id = device_tree.GetBootDevice()
+        boot_device_data = DeviceData.from_structure(device_tree.GetDeviceData(boot_device_id))
+        safe_exec_program("mount", [boot_device_data.path, self._sysroot + "/boot"])
+        # Make sure the partition is empty
+        safe_exec_program("rm", ["-rf", self._sysroot + "/boot/*"])
+
+        log.debug("Executing bootc install command")
+        safe_exec_program(
+            "bootc",
+            ["install",
+            "to-filesystem",
+            "--stateroot=" + stateroot,
+            "--source-imgref=" + self._data.sourceImgRef,
+            "--target-imgref=" + self._data.targetImgRef,
+            self._sysroot]
+        )
+
+        # Get the deployment path using OSTree API (same approach as SetSystemRootTask)
+        # This needs to be done before unmounting, while the sysroot is still accessible
+        # After bootc install, the ostree repo is in self._sysroot
+        new_root_path = self._get_deployment_path(self._sysroot)
+
+        # After bootc install is completed sysroot is mounted in read only mode
+        # and it points to the base of ostree deployment but not the new true sysroot.
+        # Final steps of Anaconda install expects to find config dirs like `/etc`
+        # in the /mnt/sysroot. We need to fix those mounts.
+
+        # Track which partition is sysroot
+        # Get the root device
+        device_tree = STORAGE.get_proxy(DEVICE_TREE)
+        root_device_id = device_tree.GetRootDevice()
+        root_device_data = DeviceData.from_structure(device_tree.GetDeviceData(root_device_id))
+        sysroot_partition = root_device_data.path
+
+        # Remove existing mounts as they are read only
+        safe_exec_program("umount", ["-l", "/run/bootc/storage"])
+
+        # Mount the partition to physroot so the deployment path is accessible
+        safe_exec_program("mount", [sysroot_partition, self._physroot])
+
+        # Adjust the deployment path: replace /mnt/sysroot with /mnt/sysimage
+        # since we remounted the partition to self._physroot
+        new_root_path = new_root_path.replace(self._sysroot, self._physroot)
+
+        set_system_root(new_root_path)
+
+        # Anaconda is expecting to put some files in new root directory
+        # but after bootc install root is a symlinking to not existing var/roothome
+        os.makedirs(self._sysroot + "/var/roothome", mode=0o755, exist_ok=True)
+        os.makedirs(self._sysroot + "/var/home", mode=0o755, exist_ok=True)
+
+        # Prepare SELinux hooks needed by the `chpasswd` running in chroot
+        # when SELinux is enabled: https://bugzilla.redhat.com/show_bug.cgi?id=1321375
+        proc_path = "/proc"
+        os.makedirs(self._sysroot + proc_path, mode=0o555, exist_ok=True)
+        safe_exec_program("mount", ["--bind", proc_path, self._sysroot + proc_path])
+
+        selinuxfs_path = "/sys/fs/selinux"
+        os.makedirs(self._sysroot + selinuxfs_path, mode=0o555, exist_ok=True)
+        safe_exec_program("mount", ["--bind", selinuxfs_path, self._sysroot + selinuxfs_path])
+
+        log.info("Bootc deploy complete")
+        self.report_progress(_("Bootc deployment complete: {}").format(ref))
 
 
 class DeployOSTreeTask(Task):
