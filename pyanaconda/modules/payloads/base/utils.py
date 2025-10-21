@@ -33,7 +33,6 @@ from pyanaconda.modules.common.constants.services import STORAGE
 from pyanaconda.modules.common.structures.payload import RepoConfigurationData
 from pyanaconda.modules.common.structures.storage import DeviceData
 
-
 log = get_module_logger(__name__)
 
 
