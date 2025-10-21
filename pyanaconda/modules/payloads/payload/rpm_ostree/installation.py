@@ -694,9 +694,14 @@ class DeployBootcTask(Task):
         # Bootc expects `prepare-root.conf` file to be presented in the system
         # https://github.com/bootc-dev/bootc/discussions/1400
         # https://github.com/bootc-dev/bootc/issues/1410
+        # echo -e "[ostree] \nsysroot=/sysroot" > /etc/ostree/prepare-root.conf
         log.debug("Bootc workaround: add missing configuration file")
-        # touch /etc/ostree/prepare-root.conf
-        touch("/etc/ostree/prepare-root.conf")
+        if not os.path.exists("/etc/ostree/prepare-root.conf"):
+            with open("/etc/ostree/prepare-root.conf", "w") as f:
+                f.write("[ostree]\n")
+                f.write("sysroot=/sysroot\n")
+        else:
+            log.debug("/etc/ostree/prepare-root.conf already presented and will not be modified")
 
         # After automatic partitioning sysroot and sysimage are mounted,
         # but we need a clear directory strucutre expected by the bootc
