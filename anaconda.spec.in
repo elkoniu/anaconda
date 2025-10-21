@@ -298,6 +298,7 @@ Requires: libselinux-utils
 Requires: selinux-policy-targeted
 Requires: policycoreutils
 Requires: policycoreutils-python-utils
+Requires: bootupd
 
 %description install-img-deps
 The anaconda-install-img-deps metapackage lists all boot.iso installation
