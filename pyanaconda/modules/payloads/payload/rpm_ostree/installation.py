@@ -31,7 +31,7 @@ from pyanaconda.core.path import (
     make_directories,
     set_system_root,
 )
-from pyanaconda.core.util import execProgram, execWithCapture, execWithRedirect
+from pyanaconda.core.util import execProgram, execWithRedirect
 from pyanaconda.modules.common.constants.objects import BOOTLOADER, DEVICE_TREE
 from pyanaconda.modules.common.constants.services import LOCALIZATION, STORAGE
 from pyanaconda.modules.common.errors.installation import (
