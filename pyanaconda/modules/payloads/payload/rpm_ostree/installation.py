@@ -713,11 +713,17 @@ class DeployBootcTask(Task):
         log.debug("Bootc workaround: remove unwanted directories")
         # rm -rf /mnt/sysroot/*
         safe_exec_program("rm", ["-rf", self._sysroot + "/root"])
-        safe_exec_program("rmdir", [self._sysroot + "/dev"])
-        safe_exec_program("rmdir", [self._sysroot + "/proc"])
-        safe_exec_program("rmdir", [self._sysroot + "/run"])
-        safe_exec_program("rmdir", [self._sysroot + "/sys"])
-        safe_exec_program("rmdir", [self._sysroot + "/tmp"])
+        os.rmdir(self._sysroot + "/dev")
+        os.rmdir(self._sysroot + "/proc")
+        os.rmdir(self._sysroot + "/run")
+        os.rmdir(self._sysroot + "/sys")
+        os.rmdir(self._sysroot + "/tmp")
+        try:
+            os.rmdir(self._sysroot + "/home")
+        except FileNotFoundError:
+            # This is fine because we just need to make sure all of these
+            # directories do not exist
+            log.debug("No /home directory to remove")
 
         # Bootc requires empty `boot` directory to be presentd
         log.debug("Bootc workaround: create bootc required dirs")
