@@ -770,7 +770,17 @@ class DeployBootcTask(Task):
 
         # Anaconda is expecting to put some files in new root directory
         # but after bootc install root is a symlinkg to not existing var/roothome
-        safe_exec_program("mkdir", [self._sysroot + "/var/roothome"])
+        safe_exec_program("mkdir", ["-p", self._sysroot + "/var/roothome"])
+
+        # Prepare SELinux hooks needed by the `chpasswd` running in chroot
+        # when SELinux is enabled: https://bugzilla.redhat.com/show_bug.cgi?id=1321375
+        proc_path = "/proc"
+        safe_exec_program("mkdir", ["-p", self._sysroot + proc_path])
+        safe_exec_program("mount", ["--bind", proc_path, self._sysroot + proc_path])
+
+        selinuxfs_path = "/sys/fs/selinux"
+        safe_exec_program("mkdir", ["-p", self._sysroot + selinuxfs_path])
+        safe_exec_program("mount", ["--bind", selinuxfs_path, self._sysroot + selinuxfs_path])
 
         log.info("Bootc deploy complete")
         self.report_progress(_("Bootc deployment complete: {}").format(ref))
