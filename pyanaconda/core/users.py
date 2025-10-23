@@ -515,9 +515,10 @@ def set_user_password(username, password, is_crypted, lock, root="/"):
             password = "!" + password
             log.info("user account %s locked", username)
 
-        ret = util.execWithRedirect("chpasswd", ["-R", root, "-e", f"{username}:{password}"])
-        if ret != 0:
-            raise OSError("Unable to set password for new user: status=%s" % ret)
+        proc = util.startProgram(["chpasswd", "-R", root, "-e"], stdin=subprocess.PIPE)
+        proc.communicate(("%s:%s\n" % (username, password)).encode("utf-8"))
+        if proc.returncode != 0:
+            raise OSError("Unable to set password for new user: status=%s" % proc.returncode)
 
     # Reset sp_lstchg to an empty string. On systems with no rtc, this
     # field can be set to 0, which has a special meaning that the password
