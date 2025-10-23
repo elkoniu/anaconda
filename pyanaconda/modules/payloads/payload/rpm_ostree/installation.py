@@ -30,7 +30,6 @@ from pyanaconda.core.i18n import _
 from pyanaconda.core.path import (
     make_directories,
     set_system_root,
-    touch,
 )
 from pyanaconda.core.util import execProgram, execWithCapture, execWithRedirect
 from pyanaconda.modules.common.constants.objects import BOOTLOADER, DEVICE_TREE
