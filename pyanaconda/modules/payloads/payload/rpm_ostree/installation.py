@@ -113,6 +113,36 @@ def _get_stateroot(data):
         return data.osname
 
 
+def _find_first_filename(root, pattern, directory=True, file=True):
+    """
+    Find the first occurrence of pattern in any directory or subdirectory of root
+
+    This is a top-down depth-first search.
+
+    :arg root: The directory to perform the search from
+    :arg pattern: The filename to search for (Note: this is not currently a regex
+        or glob pattern)
+    :kwarg directory: If set to False, do not return directories with this name
+    :kwarg file: If set to False, do not return files with this name
+    :returns: The complete path to the filename, including `root`.
+    """
+    # Find directory containing `home` and make it a new sysroot
+    for dirpath, dirs, files in os.walk(root):
+        if directory:
+            for dirname in dirs:
+                if dirname == pattern:
+                    return os.path.join(dirpath, dirname)
+        if file:
+            for filename in files:
+                if pattern == filename:
+                    return os.path.join(dirpath, pattern)
+
+    raise FileNotFoundError("Could not find {pattern} in directory: {root}".format(
+        pattern=pattern,
+        root=root
+    ))
+
+
 def _get_verification_enabled(data):
     """Find out if source has enabled verification.
 
@@ -766,9 +796,8 @@ class DeployBootcTask(Task):
         # Mount current sysroot as sysimage (umounted before)
         safe_exec_program("mount", [sysroot_partition, self._physroot])
 
-        # Find directory containing `home` and make it a new sysroot
-        new_home_path = execWithCapture("find", [self._physroot, "-name", "home"]).rstrip()
-        new_root_path = execWithCapture("dirname", [new_home_path]).rstrip()
+        new_home_path = _find_first_filename(self._physroot, "home", file=False)
+        new_root_path = os.path.dirname(new_home_path)
 
         #safe_exec_program("mount", ["--bind", new_root_path, self._sysroot])
         set_system_root(new_root_path)
