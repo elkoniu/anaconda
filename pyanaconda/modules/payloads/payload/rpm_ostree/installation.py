@@ -17,6 +17,7 @@
 #
 import glob
 import os
+import shutil
 from subprocess import CalledProcessError
 
 import blivet.util
@@ -27,10 +28,7 @@ from pyanaconda.anaconda_loggers import get_module_logger
 from pyanaconda.core.configuration.anaconda import conf
 from pyanaconda.core.glib import GError, Variant, create_new_context, format_size_full
 from pyanaconda.core.i18n import _
-from pyanaconda.core.path import (
-    make_directories,
-    set_system_root,
-)
+from pyanaconda.core.path import make_directories, set_system_root
 from pyanaconda.core.util import execProgram, execWithRedirect
 from pyanaconda.modules.common.constants.objects import BOOTLOADER, DEVICE_TREE
 from pyanaconda.modules.common.constants.services import LOCALIZATION, STORAGE
@@ -742,28 +740,31 @@ class DeployBootcTask(Task):
         # during the partitioning by blivet
         log.debug("Bootc workaround: remove unwanted directories")
         # rm -rf /mnt/sysroot/*
-        safe_exec_program("rm", ["-rf", self._sysroot + "/root"])
-        os.rmdir(self._sysroot + "/dev")
-        os.rmdir(self._sysroot + "/proc")
-        os.rmdir(self._sysroot + "/run")
-        os.rmdir(self._sysroot + "/sys")
-        os.rmdir(self._sysroot + "/tmp")
-        try:
-            os.rmdir(self._sysroot + "/home")
-        except FileNotFoundError:
-            # This is fine because we just need to make sure all of these
-            # directories do not exist
-            log.debug("No /home directory to remove")
+        shutil.rmtree(self._sysroot + "/root")
+        directories_to_remove = ("dev", "proc", "run", "sys", "tmp", "home")
+        for directory in (f"{self._sysroot}/{d}" for d in directories_to_remove):
+            try:
+                os.rmdir(directory)
+            except FileNotFoundError:
+                # This is fine because we just need to make sure all of these
+                # directories do not exist
+                log.debug("No directory to remove: %s", directory)
 
         # Bootc requires empty `boot` directory to be presentd
         log.debug("Bootc workaround: create bootc required dirs")
         # mkdir /mnt/sysroot/boot
-        safe_exec_program("mkdir", ["-p", self._sysroot + "/boot"])
+        # Security risk of exist_ok is allowed because the installer is
+        # running in a single user environment.
+        os.makedirs(self._sysroot + "/boot", mode=0o555, exist_ok=True)
         # Mount /boot partition created by autopart
         boot_partition = get_device_path_for_mount_point("/boot")
         safe_exec_program("mount", [boot_partition, self._sysroot + "/boot"])
         # Make sure the partition is empty
-        safe_exec_program("rm", ["-rf", self._sysroot + "/boot/*"])
+        for path in glob.glob(self._sysroot + "/boot/*"):
+            if os.path.isdir(path):
+                shutil.rmtree(path)
+            else:
+                os.remove(path)
 
         # This is a debugging hook. Uncoment it so anaconda will fail and hang
         # just before calling a bootc command. This way it is possible to ssh
@@ -804,17 +805,17 @@ class DeployBootcTask(Task):
 
         # Anaconda is expecting to put some files in new root directory
         # but after bootc install root is a symlinkg to not existing var/roothome
-        if not os.path.exists(self._sysroot + "/var/roothome"):
-            safe_exec_program("mkdir", ["-p", self._sysroot + "/var/roothome"])
+        os.makedirs(self._sysroot + "/var/roothome", mode=0o755, exist_ok=True)
+        os.makedirs(self._sysroot + "/var/home", mode=0o755, exist_ok=True)
 
         # Prepare SELinux hooks needed by the `chpasswd` running in chroot
         # when SELinux is enabled: https://bugzilla.redhat.com/show_bug.cgi?id=1321375
         proc_path = "/proc"
-        safe_exec_program("mkdir", ["-p", self._sysroot + proc_path])
+        os.makedirs(self._sysroot + proc_path, mode=0o555, exist_ok=True)
         safe_exec_program("mount", ["--bind", proc_path, self._sysroot + proc_path])
 
         selinuxfs_path = "/sys/fs/selinux"
-        safe_exec_program("mkdir", ["-p", self._sysroot + selinuxfs_path])
+        os.makedirs(self._sysroot + selinuxfs_path, mode=0o555, exist_ok=True)
         safe_exec_program("mount", ["--bind", selinuxfs_path, self._sysroot + selinuxfs_path])
 
         log.info("Bootc deploy complete")
