@@ -111,7 +111,7 @@ def _get_stateroot(data):
         return data.osname
 
 
-def _find_first_filename(root, pattern, directory=True, file=True):
+def _find_location(root, pattern, keyword, directory=True, file=True):
     """
     Find the first occurrence of pattern in any directory or subdirectory of root
 
@@ -120,20 +120,27 @@ def _find_first_filename(root, pattern, directory=True, file=True):
     :arg root: The directory to perform the search from
     :arg pattern: The filename to search for (Note: this is not currently a regex
         or glob pattern)
+    :arg keyword: The keyword which needs to be presented in the found path
     :kwarg directory: If set to False, do not return directories with this name
     :kwarg file: If set to False, do not return files with this name
     :returns: The complete path to the filename, including `root`.
     """
+    result = []
+
     # Find directory containing `home` and make it a new sysroot
     for dirpath, dirs, files in os.walk(root):
         if directory:
             for dirname in dirs:
                 if dirname == pattern:
-                    return os.path.join(dirpath, dirname)
+                    result.append(os.path.join(dirpath, dirname))
         if file:
             for filename in files:
                 if pattern == filename:
-                    return os.path.join(dirpath, pattern)
+                    result.append(os.path.join(dirpath, pattern))
+
+    for path in result:
+        if keyword in path:
+            return path
 
     raise FileNotFoundError("Could not find {pattern} in directory: {root}".format(
         pattern=pattern,
@@ -797,7 +804,7 @@ class DeployBootcTask(Task):
         # Mount current sysroot as sysimage (umounted before)
         safe_exec_program("mount", [sysroot_partition, self._physroot])
 
-        new_home_path = _find_first_filename(self._physroot, "home")
+        new_home_path = _find_location(self._physroot, "home", "deploy")
         new_root_path = os.path.dirname(new_home_path)
 
         #safe_exec_program("mount", ["--bind", new_root_path, self._sysroot])
