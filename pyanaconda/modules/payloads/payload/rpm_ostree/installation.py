@@ -746,9 +746,6 @@ class DeployBootcTask(Task):
 
         # Bootc requires empty `boot` directory to be present
         log.debug("Bootc workaround: create bootc required dirs")
-        # Security risk of exist_ok is allowed because the installer is
-        # running in a single user environment.
-        os.makedirs(self._sysroot + "/boot", mode=0o555, exist_ok=True)
         # Mount /boot partition created by autopart
         # Get the boot device
         device_tree = STORAGE.get_proxy(DEVICE_TREE)
