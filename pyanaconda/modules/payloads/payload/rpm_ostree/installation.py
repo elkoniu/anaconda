@@ -17,7 +17,6 @@
 #
 import glob
 import os
-import shutil
 from subprocess import CalledProcessError
 
 import blivet.util
@@ -740,20 +739,13 @@ class DeployBootcTask(Task):
         # Bootc does not need any directories created automatically
         # during the partitioning by blivet
         log.debug("Bootc workaround: remove unwanted directories")
-        # rm -rf /mnt/sysroot/*
-        shutil.rmtree(self._sysroot + "/root")
-        directories_to_remove = ("dev", "proc", "run", "sys", "tmp", "home")
+        # Remove directories that blivet created but bootc doesn't need
+        directories_to_remove = ("root", "dev", "proc", "run", "sys", "tmp", "home")
         for directory in (f"{self._sysroot}/{d}" for d in directories_to_remove):
-            try:
-                os.rmdir(directory)
-            except FileNotFoundError:
-                # This is fine because we just need to make sure all of these
-                # directories do not exist
-                log.debug("No directory to remove: %s", directory)
+            safe_exec_program("rm", ["-rf", directory])
 
         # Bootc requires empty `boot` directory to be present
         log.debug("Bootc workaround: create bootc required dirs")
-        # mkdir /mnt/sysroot/boot
         # Security risk of exist_ok is allowed because the installer is
         # running in a single user environment.
         os.makedirs(self._sysroot + "/boot", mode=0o555, exist_ok=True)
@@ -764,11 +756,7 @@ class DeployBootcTask(Task):
         boot_device_data = DeviceData.from_structure(device_tree.GetDeviceData(boot_device_id))
         safe_exec_program("mount", [boot_device_data.path, self._sysroot + "/boot"])
         # Make sure the partition is empty
-        for path in glob.glob(self._sysroot + "/boot/*"):
-            if os.path.isdir(path):
-                shutil.rmtree(path)
-            else:
-                os.remove(path)
+        safe_exec_program("rm", ["-rf", self._sysroot + "/boot/*"])
 
         # This is a debugging hook. Uncoment it so anaconda will fail and hang
         # just before calling a bootc command. This way it is possible to ssh
