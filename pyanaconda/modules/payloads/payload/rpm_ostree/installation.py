@@ -758,11 +758,6 @@ class DeployBootcTask(Task):
         # Make sure the partition is empty
         safe_exec_program("rm", ["-rf", self._sysroot + "/boot/*"])
 
-        # This is a debugging hook. Uncoment it so anaconda will fail and hang
-        # just before calling a bootc command. This way it is possible to ssh
-        # into machine to trigger bootc install manually and see full comannd log.
-        #safe_exec_program("cat", ["non-existing-file.txt"])
-
         log.debug("Executing bootc install command")
         safe_exec_program(
             "bootc",
