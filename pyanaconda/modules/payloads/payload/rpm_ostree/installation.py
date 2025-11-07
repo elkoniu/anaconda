@@ -732,7 +732,7 @@ class DeployBootcTask(Task):
             log.debug("/etc/ostree/prepare-root.conf already presented and will not be modified")
 
         # After automatic partitioning sysroot and sysimage are mounted,
-        # but we need a clear directory strucutre expected by the bootc
+        # but we need a clear directory structure expected by the bootc
         log.debug("Bootc workaround: remove unwanted mounts")
         # umount -l /mnt/sysimage/
         safe_exec_program("umount", ["-l", self._physroot])
@@ -751,7 +751,7 @@ class DeployBootcTask(Task):
                 # directories do not exist
                 log.debug("No directory to remove: %s", directory)
 
-        # Bootc requires empty `boot` directory to be presentd
+        # Bootc requires empty `boot` directory to be present
         log.debug("Bootc workaround: create bootc required dirs")
         # mkdir /mnt/sysroot/boot
         # Security risk of exist_ok is allowed because the installer is
@@ -813,7 +813,7 @@ class DeployBootcTask(Task):
         set_system_root(new_root_path)
 
         # Anaconda is expecting to put some files in new root directory
-        # but after bootc install root is a symlinkg to not existing var/roothome
+        # but after bootc install root is a symlinking to not existing var/roothome
         os.makedirs(self._sysroot + "/var/roothome", mode=0o755, exist_ok=True)
         os.makedirs(self._sysroot + "/var/home", mode=0o755, exist_ok=True)
 
