@@ -832,8 +832,8 @@ class DeployOSTreeTask(Task):
         return "Deploy OSTree"
 
     def run(self):
-        stateroot = _get_stateroot(self._data)
         ref = _get_ref(self._data)
+        stateroot = _get_stateroot(self._data)
 
         self.report_progress(_("Deployment starting: {}").format(ref))
 
