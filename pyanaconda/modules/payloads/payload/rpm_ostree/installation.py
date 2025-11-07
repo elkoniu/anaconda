@@ -701,11 +701,6 @@ class DeployBootcTask(Task):
         return "Deploy bootc"
 
     def run(self):
-        bootloader = STORAGE.get_proxy(BOOTLOADER)
-        # Bootc will handle bootloader config so disable it
-        bootloader.BootloaderMode = 0
-        log.debug("Disabled bootloader configuration due to bootc mode")
-
         stateroot = _get_stateroot(self._data)
         ref = _get_ref(self._data)
 
