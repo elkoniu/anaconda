@@ -39,7 +39,6 @@ from pyanaconda.modules.common.errors.installation import (
 from pyanaconda.modules.common.structures.bootc import BootcConfigurationData
 from pyanaconda.modules.common.structures.storage import DeviceData
 from pyanaconda.modules.common.task import Task
-from pyanaconda.modules.payloads.base.utils import get_device_path_for_mount_point
 from pyanaconda.modules.payloads.payload.rpm_ostree.util import have_bootupd
 
 gi.require_version("OSTree", "1.0")
@@ -759,8 +758,11 @@ class DeployBootcTask(Task):
         # running in a single user environment.
         os.makedirs(self._sysroot + "/boot", mode=0o555, exist_ok=True)
         # Mount /boot partition created by autopart
-        boot_partition = get_device_path_for_mount_point("/boot")
-        safe_exec_program("mount", [boot_partition, self._sysroot + "/boot"])
+        # Get the boot device
+        device_tree = STORAGE.get_proxy(DEVICE_TREE)
+        boot_device_id = device_tree.GetBootDevice()
+        boot_device_data = DeviceData.from_structure(device_tree.GetDeviceData(boot_device_id))
+        safe_exec_program("mount", [boot_device_data.path, self._sysroot + "/boot"])
         # Make sure the partition is empty
         for path in glob.glob(self._sysroot + "/boot/*"):
             if os.path.isdir(path):
@@ -790,7 +792,11 @@ class DeployBootcTask(Task):
         # in the /mnt/sysroot. We need to fix those mounts.
 
         # Track which partition is sysroot
-        sysroot_partition = get_device_path_for_mount_point("/")
+        # Get the root device
+        device_tree = STORAGE.get_proxy(DEVICE_TREE)
+        root_device_id = device_tree.GetRootDevice()
+        root_device_data = DeviceData.from_structure(device_tree.GetDeviceData(root_device_id))
+        sysroot_partition = root_device_data.path
 
         # Remove existing mounts as they are read only
         safe_exec_program("umount", ["-l", "/run/bootc/storage"])
