@@ -788,8 +788,6 @@ class DeployBootcTask(Task):
         new_home_path = _find_location(self._physroot, "home", "deploy")
         new_root_path = os.path.dirname(new_home_path)
 
-        #safe_exec_program("mount", ["--bind", new_root_path, self._sysroot])
-        # mount --bind <new_root_path> /mnt/sysroot
         set_system_root(new_root_path)
 
         # Anaconda is expecting to put some files in new root directory
