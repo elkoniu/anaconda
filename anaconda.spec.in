@@ -291,7 +291,6 @@ Requires: bootupd
 # needed for encrypted DNS
 Requires: dnsconfd
 Requires: dnsconfd-dracut
-Requires: coreutils
 Requires: selinux-policy
 Requires: libselinux-utils
 Requires: selinux-policy-targeted
