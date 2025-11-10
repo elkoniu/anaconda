@@ -769,9 +769,8 @@ class DeployBootcTask(Task):
 
         # Remove existing mounts as they are read only
         safe_exec_program("umount", ["-l", "/run/bootc/storage"])
-        safe_exec_program("umount", ["-l", self._sysroot])
 
-        # Mount current sysroot as sysimage (umounted before)
+        # Mount the partition to physroot so the deployment path is accessible
         safe_exec_program("mount", [sysroot_partition, self._physroot])
 
         # Adjust the deployment path: replace /mnt/sysroot with /mnt/sysimage
