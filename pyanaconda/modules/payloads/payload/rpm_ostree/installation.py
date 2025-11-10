@@ -109,43 +109,6 @@ def _get_stateroot(data):
         return data.osname
 
 
-def _find_location(root, pattern, keyword, directory=True, file=True):
-    """
-    Find the first occurrence of pattern in any directory or subdirectory of root
-
-    This is a top-down depth-first search.
-
-    :arg root: The directory to perform the search from
-    :arg pattern: The filename to search for (Note: this is not currently a regex
-        or glob pattern)
-    :arg keyword: The keyword which needs to be presented in the found path
-    :kwarg directory: If set to False, do not return directories with this name
-    :kwarg file: If set to False, do not return files with this name
-    :returns: The complete path to the filename, including `root`.
-    """
-    result = []
-
-    # Find directory containing `home` and make it a new sysroot
-    for dirpath, dirs, files in os.walk(root):
-        if directory:
-            for dirname in dirs:
-                if dirname == pattern:
-                    result.append(os.path.join(dirpath, dirname))
-        if file:
-            for filename in files:
-                if pattern == filename:
-                    result.append(os.path.join(dirpath, pattern))
-
-    for path in result:
-        if keyword in path:
-            return path
-
-    raise FileNotFoundError("Could not find {pattern} in directory: {root}".format(
-        pattern=pattern,
-        root=root
-    ))
-
-
 def _get_verification_enabled(data):
     """Find out if source has enabled verification.
 
@@ -698,6 +661,27 @@ class DeployBootcTask(Task):
     def name(self):
         return "Deploy bootc"
 
+    def _get_deployment_path(self, root_path):
+        """Get the deployment path using OSTree API.
+
+        :param str root_path: path to the root where ostree repo lives
+        :returns: path to the deployment directory with /root inserted
+        """
+        sysroot_file = Gio.File.new_for_path(root_path)
+        sysroot_obj = OSTree.Sysroot.new(sysroot_file)
+        sysroot_obj.load(None)
+
+        deployments = sysroot_obj.get_deployments()
+        assert len(deployments) > 0
+
+        deployment = deployments[0]
+        deployment_path = sysroot_obj.get_deployment_directory(deployment)
+        deploy_path = deployment_path.get_path()
+        # The deployment path is like /mnt/sysroot/ostree/deploy/...
+        # We need to insert /root to get /mnt/sysroot/root/ostree/deploy/...
+        deploy_path = deploy_path.replace(root_path + "/ostree", root_path + "/root/ostree", 1)
+        return deploy_path
+
     def run(self):
         stateroot = _get_stateroot(self._data)
         ref = _get_ref(self._data)
@@ -766,6 +750,11 @@ class DeployBootcTask(Task):
             self._sysroot]
         )
 
+        # Get the deployment path using OSTree API (same approach as SetSystemRootTask)
+        # This needs to be done before unmounting, while the sysroot is still accessible
+        # After bootc install, the ostree repo is in self._sysroot
+        new_root_path = self._get_deployment_path(self._sysroot)
+
         # After bootc install is completed sysroot is mounted in read only mode
         # and it points to the base of ostree deployment but not the new true sysroot.
         # Final steps of Anaconda install expects to find config dirs like `/etc`
@@ -785,8 +774,9 @@ class DeployBootcTask(Task):
         # Mount current sysroot as sysimage (umounted before)
         safe_exec_program("mount", [sysroot_partition, self._physroot])
 
-        new_home_path = _find_location(self._physroot, "home", "deploy")
-        new_root_path = os.path.dirname(new_home_path)
+        # Adjust the deployment path: replace /mnt/sysroot with /mnt/sysimage
+        # since we remounted the partition to self._physroot
+        new_root_path = new_root_path.replace(self._sysroot, self._physroot)
 
         set_system_root(new_root_path)
 
