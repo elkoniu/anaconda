@@ -32,6 +32,7 @@ from pyanaconda.modules.payloads.payload.rpm_ostree.installation import (
     DeployBootcTask,
     DeployOSTreeTask,
     InitOSTreeFsAndRepoTask,
+    PrepareBootcMountTargetsTask,
     PrepareOSTreeMountTargetsTask,
     PullRemoteAndDeleteTask,
     SetSystemRootTask,
@@ -110,10 +111,23 @@ class RPMOSTreeModule(PayloadBase):
             self._get_source(SourceType.RPM_OSTREE)
 
     def _install_with_tasks_bootc(self, data):
-        """Create the set of tasks to install the payload with bootc"""
-        # Bootc requires very limited set of tasks
+        """Create the set of tasks to install the payload with bootc
+
+        Similar to ostree flow, but bootc handles bootloader setup, so we skip
+        CopyBootloaderDataTask. DeployBootcTask handles deployment using physroot,
+        then SetSystemRootTask sets the system root to the deployment path,
+        then PrepareBootcMountTargetsTask sets up bind mounts from physroot to sysroot.
+        """
         tasks = [
             DeployBootcTask(
+                data=data,
+                physroot=conf.target.physical_root,
+                sysroot=conf.target.system_root
+            ),
+            SetSystemRootTask(
+                physroot=conf.target.physical_root
+            ),
+            PrepareBootcMountTargetsTask(
                 data=data,
                 physroot=conf.target.physical_root,
                 sysroot=conf.target.system_root
@@ -198,7 +212,7 @@ class RPMOSTreeModule(PayloadBase):
         :param tasks: a list of tasks
         """
         for task in tasks:
-            if isinstance(task, PrepareOSTreeMountTargetsTask):
+            if isinstance(task, (PrepareOSTreeMountTargetsTask, PrepareBootcMountTargetsTask)):
                 task.succeeded_signal.connect(
                     lambda t=task: self._add_internal_mounts(t.get_result())
                 )
@@ -247,10 +261,7 @@ class RPMOSTreeModule(PayloadBase):
         """
         tasks = super().tear_down_with_tasks()
 
-        # No extra steps in case of the bootc install
-        if self._get_source(SourceType.BOOTC):
-            return tasks
-
+        # Tear down mount points for both OSTree and bootc installs
         tasks.append(
             TearDownOSTreeMountTargetsTask(
                 mount_points=self._internal_mounts
