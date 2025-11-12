@@ -712,7 +712,7 @@ class DeployBootcTask(Task):
                 f.write("[ostree]\n")
                 f.write("sysroot=/sysroot\n")
         else:
-            log.debug("/etc/ostree/prepare-root.conf already presented and will not be modified")
+            log.debug("/etc/ostree/prepare-root.conf is already present and will not be modified")
 
         # After automatic partitioning sysroot and sysimage are mounted,
         # but we need a clear directory structure expected by the bootc
