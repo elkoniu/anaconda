@@ -756,7 +756,7 @@ class DeployBootcTask(Task):
 
         log.debug("Run the bootc based installation")
 
-        self.report_progress(_("Bootc deployment starting: {}").format(ref))
+        self.report_progress(_("Bootc deployment in progress: {}").format(ref))
 
         # Some workarounds are needed due to current bootc development status
 
