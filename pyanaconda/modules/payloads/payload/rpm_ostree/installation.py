@@ -727,6 +727,29 @@ class DeployBootcTask(Task):
     def name(self):
         return "Deploy bootc"
 
+    def _clean_physroot(self):
+        """Clean the physical root directory for bootc installation.
+
+        Unmounts all mount points and removes all entries from physroot (but for /boot),
+        ensuring it's empty for bootc installation.
+        """
+        log.debug("Bootc workaround: prepare clean root partition for bootc install")
+
+        # Unmount any mount points in physroot (use lazy unmount for busy mounts)
+        # Read the directory list first before iterating, as it may change during unmounting
+        entries = list(os.listdir(self._physroot))
+        for entry in entries:
+            path = os.path.join(self._physroot, entry)
+            # Try to unmount if it's a mount point, use lazy unmount for busy mounts
+            if os.path.ismount(path):
+                # Skip if /boot
+                if path == self._physroot + "/boot":
+                    log.debug("Bootc workaround: skip unmounting /boot")
+                    continue
+                safe_exec_program("umount", ["-l", path])
+
+            safe_exec_program("rm", ["-rf", path])
+
     def run(self):
         stateroot = _get_stateroot(self._data)
         ref = _get_ref(self._data)
@@ -762,43 +785,7 @@ class DeployBootcTask(Task):
         # After automatic partitioning sysroot and sysimage are mounted,
         # but we need a clear directory structure expected by the bootc
         # bootc requires the target to be a mount point and needs an empty directory with only /boot
-        # We'll preserve anaconda's /proc and /sys for later bind mounting to the deployment
-        log.debug("Bootc workaround: prepare clean root partition for bootc install")
-
-        # Unmount /boot if it's mounted before cleaning
-        boot_dir = self._physroot + "/boot"
-        if os.path.ismount(boot_dir):
-            log.debug("Bootc: unmounting /boot before cleaning root partition")
-            safe_exec_program("umount", ["-l", boot_dir])
-
-        # Bootc does not need any directories created automatically
-        # during the partitioning by blivet
-        log.debug("Bootc workaround: remove unwanted directories")
-        # Remove directories that blivet created but bootc doesn't need
-        directories_to_remove = ("root", "dev", "proc", "run", "sys", "tmp", "home")
-        for directory in (f"{self._sysroot}/{d}" for d in directories_to_remove):
-            # If it's mount point unmount it first
-            if os.path.ismount(directory):
-                log.debug("Bootc: unmounting %s before removing", directory)
-                safe_exec_program("umount", ["-l", directory])
-            safe_exec_program("rm", ["-rf", directory])
-
-        # Bootc requires empty `boot` directory to be present
-        # The boot partition should have been auto-created by anaconda storage code
-        # (same as the root partition), but we need to detect and mount it
-        log.debug("Bootc workaround: create bootc required dirs")
-        # Recreate /boot directory in physroot (which is now a mount point) as an empty directory
-        boot_dir = self._physroot + "/boot"
-        make_directories(boot_dir)
-
-        # Get the boot device (similar to ostree installation)
-        device_tree = STORAGE.get_proxy(DEVICE_TREE)
-        boot_device_id = device_tree.GetBootDevice()
-        boot_device_data = DeviceData.from_structure(device_tree.GetDeviceData(boot_device_id))
-        # Mount /boot partition created by autopart to physroot
-        safe_exec_program("mount", [boot_device_data.path, boot_dir])
-        # Make sure the partition is empty (bootc expects an empty boot directory)
-        safe_exec_program("rm", ["-rf", boot_dir + "/*"])
+        self._clean_physroot()
 
         log.debug("Executing bootc install command")
         # Install bootc directly to physroot
