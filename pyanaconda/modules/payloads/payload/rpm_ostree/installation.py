@@ -826,7 +826,7 @@ class DeployBootcTask(Task):
         except OSError as e:
             raise PayloadInstallationError(
                 "bootc installation failed: {}".format(str(e))
-            )
+            ) from e
 
         # Remove existing mounts as they are read only
         safe_exec_program("umount", ["-l", "/run/bootc/storage"])
