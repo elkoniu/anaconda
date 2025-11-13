@@ -124,25 +124,24 @@ def _get_verification_enabled(data):
         return data.gpg_verification_enabled
 
 
-class PrepareOSTreeMountTargetsTask(Task):
-    """Task to prepare OSTree mount targets."""
+class PrepareMountTargetsTaskBase(Task):
+    """Base class for preparing mount targets.
+
+    Provides common functionality for setting up bind mounts between physical root and sysroot.
+    """
 
     def __init__(self, sysroot, physroot, data):
         """Create a new task.
 
         :param str sysroot: a path to the system root
         :param str physroot: a path to the physical root
-        :param data: an RPM OSTree configuration
+        :param data: a configuration (OSTree or Bootc)
         """
         super().__init__()
         self._data = data
         self._sysroot = sysroot
         self._physroot = physroot
         self._internal_mounts = []
-
-    @property
-    def name(self):
-        return "Prepare OSTree mount targets"
 
     def _setup_internal_bindmount(self, src, dest=None,
                                   src_physical=True,
@@ -214,6 +213,14 @@ class PrepareOSTreeMountTargetsTask(Task):
             self._setup_internal_bindmount(var_root, dest='/var', recurse=False)
         else:
             self._setup_internal_bindmount('/var', recurse=False)
+
+
+class PrepareOSTreeMountTargetsTask(PrepareMountTargetsTaskBase):
+    """Task to prepare OSTree mount targets."""
+
+    @property
+    def name(self):
+        return "Prepare OSTree mount targets"
 
     def _fill_var_subdirectories(self):
         """Add subdirectories to /var
@@ -320,21 +327,9 @@ class PrepareOSTreeMountTargetsTask(Task):
         return self._internal_mounts
 
 
-class PrepareBootcMountTargetsTask(Task):
+class PrepareBootcMountTargetsTask(PrepareMountTargetsTaskBase):
     """Task to prepare Bootc mount targets.
     """
-
-    def __init__(self, sysroot, physroot, data):
-        """Create a new task.
-
-        :param str sysroot: a path to the system root
-        :param str physroot: a path to the physical root
-        :param data: a Bootc configuration
-        """
-        super().__init__()
-        self._data = data
-        self._sysroot = sysroot
-        self._physroot = physroot
 
     @property
     def name(self):
@@ -346,21 +341,23 @@ class PrepareBootcMountTargetsTask(Task):
         Explicitly do API (sysfs, tmpfs,...) bind mounts from host to sysroot for bootc.
         """
         for path in ("/proc", "/sys"):
-            safe_exec_program("mount", ["--bind", path, self._sysroot + path])
+            sysroot_path = self._sysroot + path
+            safe_exec_program("mount", ["--bind", path, sysroot_path])
+            self._internal_mounts.append(sysroot_path)
 
     def _handle_var_mount_point(self, existing_mount_points):
         """Handle /var mount point for bootc.
 
-        For bootc, we create /var structure in sysroot and bind mount from host's /var.
-        We also ensure /var/roothome and /var/home exist.
+        For bootc, we bind mount /var similar to OSTree, then create /var/roothome and /var/home
+        in the mounted /var.
 
         :param [] existing_mount_points: a list of existing mount points
         """
-        # Create /var structure in sysroot
-        var_sysroot = self._sysroot + "/var"
-        make_directories(var_sysroot)
+        # Bind mount /var using parent class method
+        super()._handle_var_mount_point(existing_mount_points)
 
-        # Create /var/roothome and /var/home
+        # Create /var/roothome and /var/home after bind mount so they exist in the mounted /var
+        var_sysroot = self._sysroot + "/var"
         var_roothome = var_sysroot + "/roothome"
         var_home = var_sysroot + "/home"
         os.makedirs(var_roothome, mode=0o755, exist_ok=True)
@@ -375,8 +372,9 @@ class PrepareBootcMountTargetsTask(Task):
         device_tree = STORAGE.get_proxy(DEVICE_TREE)
         mount_points = device_tree.GetMountPoints()
 
-        # Remount sysroot as read-write so we can set up API mount points
+        # Remount sysroot and sysimage as read-write so we can set up API mount points
         safe_exec_program("mount", ["-o", "remount,rw", self._sysroot])
+        safe_exec_program("mount", ["-o", "remount,rw", self._physroot])
 
         # Handle API mount points - bind mount from host to sysroot
         # These bind mount the host's API directories to the deployment
