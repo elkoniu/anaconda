@@ -28,7 +28,7 @@ from pyanaconda.core.configuration.anaconda import conf
 from pyanaconda.core.glib import GError, Variant, create_new_context, format_size_full
 from pyanaconda.core.i18n import _
 from pyanaconda.core.path import make_directories, set_system_root
-from pyanaconda.core.util import execProgram, execWithRedirect
+from pyanaconda.core.util import execProgram, execReadlines, execWithRedirect
 from pyanaconda.modules.common.constants.objects import BOOTLOADER, DEVICE_TREE
 from pyanaconda.modules.common.constants.services import LOCALIZATION, STORAGE
 from pyanaconda.modules.common.errors.installation import (
@@ -748,6 +748,19 @@ class DeployBootcTask(Task):
 
             safe_exec_program("rm", ["-rf", path])
 
+    def _parse_bootc_output(self, line):
+        """Parse bootc install output and report progress.
+
+        :param str line: line of output from bootc
+        """
+        # Remove carriage returns and strip whitespace
+        line = line.rsplit("\r", 1)[-1].strip()
+        if not line:
+            return
+
+        log.debug("bootc output: %s", line)
+        self.report_progress(_("Deploying image: {}").format(line))
+
     def run(self):
         stateroot = _get_stateroot(self._data)
         ref = _get_ref(self._data)
@@ -794,9 +807,8 @@ class DeployBootcTask(Task):
 
         log.debug("Executing bootc install command")
         # Install bootc directly to physroot
-        safe_exec_program(
-            "bootc",
-            ["install",
+        bootc_args = [
+            "install",
             "to-filesystem",
             "--karg=root=" + root_device_uuid,
             "--boot-mount-spec",
@@ -804,8 +816,17 @@ class DeployBootcTask(Task):
             "--stateroot=" + stateroot,
             "--source-imgref=" + self._data.sourceImgRef,
             "--target-imgref=" + self._data.targetImgRef,
-            self._physroot]
-        )
+            self._physroot
+        ]
+
+        try:
+            self.report_progress(_("Deploying image..."))
+            for line in execReadlines("bootc", bootc_args):
+                self._parse_bootc_output(line)
+        except OSError as e:
+            raise PayloadInstallationError(
+                "bootc installation failed: {}".format(str(e))
+            )
 
         # Remove existing mounts as they are read only
         safe_exec_program("umount", ["-l", "/run/bootc/storage"])
