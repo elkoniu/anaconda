@@ -787,12 +787,22 @@ class DeployBootcTask(Task):
         # bootc requires the target to be a mount point and needs an empty directory with only /boot
         self._clean_physroot()
 
+        device_tree = STORAGE.get_proxy(DEVICE_TREE)
+        root_device_id = device_tree.GetRootDevice()
+        root_device_uuid = device_tree.GetFstabSpec(root_device_id)
+
+        boot_device_id = device_tree.GetBootDevice()
+        boot_device_uuid = device_tree.GetFstabSpec(boot_device_id)
+
         log.debug("Executing bootc install command")
         # Install bootc directly to physroot
         safe_exec_program(
             "bootc",
             ["install",
             "to-filesystem",
+            "--karg=root=" + root_device_uuid,
+            "--boot-mount-spec",
+            boot_device_uuid,
             "--stateroot=" + stateroot,
             "--source-imgref=" + self._data.sourceImgRef,
             "--target-imgref=" + self._data.targetImgRef,
